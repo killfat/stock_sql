@@ -20,11 +20,13 @@ dtype_dict=dict(zip(columns,map(mysql_dtype_dict.get, dtypes)))
 terms_amount=10
 term_unit='day'
 database = Database(connector_engine, table_name)
+database.operate_by_query("delete from stock_prices where time>'2020-03-23 00:00:00' and time<'2020-03-24 00:00:00'")
+print("Delete complete.")
 while date <= end_date:
     name='Stock Price '+convert_date(date)+'.csv'
 
     try:
-        df=pd.read_csv('Stock Price 20200416\\'+name)[columns]
+        df=pd.read_csv('venv\\'+name)[columns]
         df['time']=pd.to_datetime(df['time'])
         print("read complete.")
         database.upload_data(df, table_name, if_exists='append', dtype=dtype_dict)

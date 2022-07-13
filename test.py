@@ -7,6 +7,7 @@ Modified Structure and Queries on Sun Apr  3 2022
 
 import pandas as pd
 import numpy as np
+import csv
 from datetime import datetime
 from database_pipeline import DatabaseConnector, Database
 from tech_indicator import TechnicalIndicators
@@ -18,15 +19,46 @@ database = Database(connector_engine, table_name)
 tech_ind = TechnicalIndicators(database)
 # database.create_index(table_name, 'code')
 # 想要计算indicator的股票代码list
+check_time = datetime.fromisoformat('2020-04-23 09:31:00')
+code = '601789.XSHG'
+lb = tech_ind.LB(code, check_time)
+ma1w = tech_ind.MA(code, check_time, period=5)
+ma1m = tech_ind.MA(code, check_time, period=5, unit='m')
+k, d, j = tech_ind.KDJ(code, check_time)
 
-code_list=['000687.XSHE','000514.XSHE','000630.XSHE']
-for code in code_list:
-    five_day_average = tech_ind.MA(code, datetime.fromisoformat('2020-04-23'))
-    five_day_lb = tech_ind.LB(code, datetime.fromisoformat('2020-04-23 09:31:00'))
-    df_macd = tech_ind.MACD(code, datetime.fromisoformat('2020-04-23'))
-    df_kdj = tech_ind.KDJ(code, datetime.fromisoformat('2020-04-23'))
-    print('MA/LB', five_day_average, five_day_lb)
-    print('MACD')
-    print(df_macd)
-    print('KDJ')
-    print(df_kdj)
+dif1d, dea1d, macd1d = tech_ind.MACD(code, check_time)
+dif1m, dea1m, macd1m = tech_ind.MACD(code, check_time, unit='1m')
+dif5m, dea5m, macd5m = tech_ind.MACD(code, check_time, unit='5m')
+
+#hsl1d = tech_ind.HSL(code, check_time)
+# mahsl1d = tech_ind.HSL(code, )
+# hsl1m = tech_ind.HSL(code, check_time)
+# mahsl1m = tech_ind.HSL(code, )
+
+mfi1d = tech_ind.MFI(code, check_time)
+rsi1d = tech_ind.RSI(code, check_time)
+accer1d = tech_ind.ACCER(code, check_time)
+accer1m = tech_ind.ACCER(code, check_time, unit='m')
+ar, br = tech_ind.BRAR(code, check_time)
+pcnt1d, mapcnt1d = tech_ind.PCNT(code, check_time)
+cci1d = tech_ind.CCI(code, check_time)
+cci1m = tech_ind.CCI(code, check_time, unit='1m')
+cci5m = tech_ind.CCI(code, check_time, unit='5m')
+print("LB:", lb)
+print("MA1w/MA1m:", ma1w, ma1m)
+print("DIF1d/DEA1d/MACD1d:", dif1d, dea1d, macd1d)
+print("DIF1m/DEA1m/MACD1m:", dif1m, dea1m, macd1m)
+print("DIF5m/DEA5m/MACD5m:", dif5m, dea5m, macd5m)
+print("K/D/J:", k, d, j)
+print("MFI:", mfi1d)
+print("RSI:", rsi1d)
+print("ACCER1d/1m:", accer1d, accer1m)
+print("AR/BR:", ar, br)
+print("PCNT/MAPCNT:", pcnt1d, mapcnt1d)
+print("CCI1d/1m/5m:", cci1d, cci1m, cci5m)
+with open("out.csv", 'w', newline='') as f:
+    csv_wt = csv.writer(f)
+    make_list = [lb, ma1w, ma1m, k, d, j, dif1d, dea1d, macd1d, mfi1d, rsi1d,
+                 accer1d, accer1m, ar, br, pcnt1d, mapcnt1d, cci1d, cci1m, cci5m]
+    csv_wt.writerow(make_list)
+

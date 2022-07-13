@@ -115,16 +115,19 @@ class Database:
             if type(price_type_list) != list:
                 price_type_list = [price_type_list]
 
+            if "time" not in price_type_list:
+                price_type_list.append("time")
             # time and code is mandatory
             #command = 'time, code'
 
             price_type_list = ",".join(price_type_list)
 
+
         # combine sql command
         sql = "select %s from %s where time >= '%s' and time <= '%s';" \
               % (price_type_list, t1, start_time, end_time)
 
-        return read_sql(sql, self.engine)
+        return read_sql(sql, self.engine, index_col="time")
 
     def select_time(self, start_time, end_time, time, code=None, price_type_list='*'):
         if code is None:
@@ -144,14 +147,47 @@ class Database:
             if type(price_type_list) != list:
                 price_type_list = [price_type_list]
 
+            if "time" not in price_type_list:
+                price_type_list.append("time")
             price_type_list = ",".join(price_type_list)
 
         # combine sql command
-        sql = "select %s from %s where time>='%s' and time<='%s' and HOUR(time)='%d' and MINUTE(time)='%d' ORDER BY " \
+        sql = "SELECT * FROM (SELECT %s from %s where time>='%s' and time<'%s') AS t2 WHERE HOUR(time)='%d' and MINUTE(time)='%d' ORDER BY " \
               "time ASC;" % (price_type_list, t1, start_time, end_time, time.hour, time.minute)
 
-        return read_sql(sql, self.engine)
+        return read_sql(sql, self.engine, index_col="time")
 
     def get_all_date(self):
         sql = "SELECT DISTINCT DATE(time) FROM %s;" % self.table_name
         return list(chain(*self.operate_by_query(sql)))
+
+    def select_by_date(self, start_time, end_time, code=None, price_type_list='*'):
+        if code is None:
+            print("WARNING: no code provided")
+            t1 = "(SELECT * FROM %s WHERE time >= '%s' and time < '%s') t1"\
+                 % (self.table_name, start_time, end_time)
+        else:
+            t1 = "(SELECT * FROM %s WHERE code='%s' and time >= '%s' and time < '%s') t1"\
+                 % (self.table_name, code, start_time, end_time)
+        # define part relative to price type in sql command
+        if price_type_list == '*':
+
+            ...
+
+        else:
+
+            if type(price_type_list) != list:
+                price_type_list = [price_type_list]
+
+            if "time" not in price_type_list:
+                price_type_list.append("time")
+            price_type_list = ",".join(price_type_list)
+        sql = "SELECT t1.time, t2.open, t3.close, t1.high, t1.low, sum(t1.volume) FROM %s t1 " \
+            "LEFT JOIN %s t2 ON t1.code='%s' and t2.code=t1.code and t1.time>='%s' and t1.time<'%s' and DATE(t1.time)=DATE(t2.time) and t1.time>t2.time " \
+            "LEFT JOIN %s t3 ON t1.code='%s' and t3.code=t1.code and t1.time>='%s' and t1.time<'%s' and DATE(t1.time)=DATE(t3.time) and t1.time<t3.time " \
+            "WHERE t2.time is NULL and t3.time is NULL" \
+            % (self.table_name, self.table_name, code, start_time, end_time, self.table_name, code, start_time, end_time)
+        return read_sql(sql, self.engine, index_col="date")
+
+    def update_data(self):
+        pass

@@ -44,6 +44,7 @@ class DatetimeManager:
         if idx < days:
             print("back %s days not available" % days)
             return None
+
         return self.date_list[idx - days]
 
     def backward_list(self, today, days):
