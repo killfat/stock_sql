@@ -329,7 +329,7 @@ class TechnicalIndicators:
                 start_day = self.date.backward(check_date.date(), long + mid - 1)
                 close_df = self.get_close(ticker, start_day, check_date, include_today=include_now)
             elif unit[-1] == 'm':
-                start_day = check_date - timedelta(minutes=int(unit[0]) * (long + mid - 1) - 1)
+                start_day = check_date - timedelta(minutes=int(unit[:-1]) * (long + mid - 1) - 1)
                 if (start_day.hour == 12 or (start_day.hour == 11 and start_day.minute > 30)) \
                         or (start_day.hour == 13 and start_day.minute == 0):
                     start_day = start_day - timedelta(hours=1, minutes=30)
@@ -339,7 +339,7 @@ class TechnicalIndicators:
                         or (start_day.hour == 13 and start_day.minute == 0):
                     start_day = start_day - timedelta(hours=1, minutes=30)
                 close_df = self.get_field_data(ticker, start_day, check_date, ['close'])
-                close_df = close_df[(int(unit[0]) - 1)::int(unit[0])].reset_index()['close']
+                close_df = close_df[(int(unit[:-1]) - 1)::int(unit[:-1])].reset_index()['close']
             else:
                 return None
             EMA1 = close_df.ewm(span=short, adjust=False, min_periods=short).mean()
@@ -362,8 +362,8 @@ class TechnicalIndicators:
             DEA = (DIF * 2 + self.buffer.get('dif') * (mid - 1)) / (mid + 1)
             return DIF, DEA, (DIF - DEA) * 2
 
-    def BOLL(self, ticker, check_date, days, up=2, dwn=2, include_now=True):
-        start_day = self.date.backward(check_date, days - 1)
+    def BOLL(self, ticker, check_date, days=20, up=2, dwn=2, include_now=True):
+        start_day = self.date.backward(check_date.date(), days - 1)
         close = self.get_close(ticker, start_day, check_date)
         MB = close.mean()
         UB = MB + up * close.std()
@@ -399,8 +399,8 @@ class TechnicalIndicators:
     def ACCER(self, ticker, check_date, n=8, unit='d'):
         if unit == 'd':
             start_day = self.date.backward(check_date.date(), n - 1)
-        elif unit == 'm':
-            start_day = check_date - timedelta(minutes=n-1)
+        elif unit[-1] == 'm':
+            start_day = check_date - timedelta(minutes=n * int(unit[:-1]) -1)
             if (start_day.hour == 12 or (start_day.hour == 11 and start_day.minute > 30)) \
                     or (start_day.hour == 13 and start_day.minute == 0):
                 start_day = start_day - timedelta(hours=1, minutes=30)
@@ -408,7 +408,9 @@ class TechnicalIndicators:
                 start_day = start_day - timedelta(hours=18, minutes=30)
         else:
             return None
-        close = self.get_close(ticker, start_day, check_date, unit=unit, include_today=True)
+        close = self.get_close(ticker, start_day, check_date, unit=unit[-1], include_today=True)
+        if unit[-1] == 'm':
+            close = close[(int(unit[:-1]) - 1)::int(unit[:-1])].reset_index()['close']
         model = LinearRegression()
         x = range(n)
 
@@ -442,7 +444,7 @@ class TechnicalIndicators:
             days = 1
             start_day = self.date.backward(check_date.date(), n * days - 1)
         elif unit[-1] == 'm':
-            start_day = check_date - timedelta(minutes=int(unit[0]) * n-1)
+            start_day = check_date - timedelta(minutes=int(unit[:-1]) * n - 1)
             if (start_day.hour == 12 or (start_day.hour == 11 and start_day.minute > 30)) \
                     or (start_day.hour == 13 and start_day.minute == 0):
                 start_day = start_day - timedelta(hours=1, minutes=30)
@@ -457,11 +459,11 @@ class TechnicalIndicators:
             low = data['low'].groupby(data.index.date).min()
         elif unit[-1] == 'm':
             data = data.reset_index()
-            high = data['high'].groupby(data.index // int(unit[0])).max()
-            low = data['high'].groupby(data.index // int(unit[0])).min()
+            high = data['high'].groupby(data.index // int(unit[:-1])).max()
+            low = data['high'].groupby(data.index // int(unit[:-1])).min()
             #high = data['high'].groupby(Grouper(freq=unit[0]+'min', closed='left', origin='start')).max().reset_index()['high']
             #low = data['low'].groupby(Grouper(freq=unit[0]+'min', closed='left', origin='start')).min().reset_index()['low']
-            close = close[(int(unit[0])-1)::int(unit[0])].reset_index()['close']
+            close = close[(int(unit[:-1])-1)::int(unit[:-1])].reset_index()['close']
         else:
             return None
 

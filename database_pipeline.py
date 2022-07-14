@@ -30,6 +30,17 @@ class Database:
     def __del__(self):
         self.engine.dispose()
 
+    def create_table(self):
+        self.engine.execute(
+            "CREATE TABLE " + self.table_name +
+            "( ticker char(15) NOT NULL,"
+            "  time datetime NOT NULL,"
+            "  open float,"
+            "  high float,"
+            "  low float,"
+            "  close float,"
+            "  PRIMARY KEY (ticker, time));")
+
     def operate_by_query(self, query_sentence):
         return self.engine.execute(query_sentence)
 
@@ -37,12 +48,10 @@ class Database:
         sql = 'select * from ' + table_name + ';'
         return read_sql(sql, self.engine)
 
-    def upload_data(self, data, data_name, if_exists=None, index=None, index_label=None, dtype=None):
+    def upload_data(self, data, data_name, if_exists=None, index=False, index_label=None, dtype=None):
         # if_exists = 'append','replace'
         if if_exists is None:
             if_exists = 'append'
-        if index is None:
-            index = False
 
         data.to_sql(data_name, self.engine, if_exists=if_exists, index=index,
                     index_label=index_label, dtype=dtype, chunksize=10000)  # ,method='multi')

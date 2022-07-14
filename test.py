@@ -25,7 +25,7 @@ lb = tech_ind.LB(code, check_time)
 ma1w = tech_ind.MA(code, check_time, period=5)
 ma1m = tech_ind.MA(code, check_time, period=5, unit='m')
 k, d, j = tech_ind.KDJ(code, check_time)
-
+mb, ub, _ = tech_ind.BOLL(code, check_time)
 dif1d, dea1d, macd1d = tech_ind.MACD(code, check_time)
 dif1m, dea1m, macd1m = tech_ind.MACD(code, check_time, unit='1m')
 dif5m, dea5m, macd5m = tech_ind.MACD(code, check_time, unit='5m')
@@ -37,28 +37,34 @@ dif5m, dea5m, macd5m = tech_ind.MACD(code, check_time, unit='5m')
 
 mfi1d = tech_ind.MFI(code, check_time)
 rsi1d = tech_ind.RSI(code, check_time)
-accer1d = tech_ind.ACCER(code, check_time)
-accer1m = tech_ind.ACCER(code, check_time, unit='m')
+accer5m = tech_ind.ACCER(code, check_time, unit='5m')
+accer15m = tech_ind.ACCER(code, check_time, unit='15m')
 ar, br = tech_ind.BRAR(code, check_time)
 pcnt1d, mapcnt1d = tech_ind.PCNT(code, check_time)
 cci1d = tech_ind.CCI(code, check_time)
 cci1m = tech_ind.CCI(code, check_time, unit='1m')
 cci5m = tech_ind.CCI(code, check_time, unit='5m')
 print("LB:", lb)
-print("MA1w/MA1m:", ma1w, ma1m)
+#print("MA1w/MA1m:", ma1w, ma1m)
+print("K/D/J:", k, d, j)
 print("DIF1d/DEA1d/MACD1d:", dif1d, dea1d, macd1d)
 print("DIF1m/DEA1m/MACD1m:", dif1m, dea1m, macd1m)
 print("DIF5m/DEA5m/MACD5m:", dif5m, dea5m, macd5m)
-print("K/D/J:", k, d, j)
+print("UB/MB:", ub, mb)
 print("MFI:", mfi1d)
 print("RSI:", rsi1d)
-print("ACCER1d/1m:", accer1d, accer1m)
+print("ACCER5m/15m:", accer5m, accer15m)
 print("AR/BR:", ar, br)
 print("PCNT/MAPCNT:", pcnt1d, mapcnt1d)
 print("CCI1d/1m/5m:", cci1d, cci1m, cci5m)
 with open("out.csv", 'w', newline='') as f:
     csv_wt = csv.writer(f)
-    make_list = [lb, ma1w, ma1m, k, d, j, dif1d, dea1d, macd1d, mfi1d, rsi1d,
-                 accer1d, accer1m, ar, br, pcnt1d, mapcnt1d, cci1d, cci1m, cci5m]
+    header = ['lb','k','d','j','dif1d','dea1d','macd1d','dif1m','dea1m','macd1m',
+        'dif5m','dea5m','macd5m','ub','mb','mfi1d','rsi1d',
+        'accer5m','accer15m','ar','br','pcnt1d','mapcnt1d','cci1d','cci1m','cci5m']
+    make_list = [lb, k, d, j, dif1d, dea1d, macd1d, dif1m, dea1m, macd1m,
+                 dif5m, dea5m, macd5m, ub, mb, mfi1d, rsi1d,
+                 accer5m, accer15m, ar, br, pcnt1d, mapcnt1d, cci1d, cci1m, cci5m]
+    csv_wt.writerow(header)
     csv_wt.writerow(make_list)
 
