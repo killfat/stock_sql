@@ -8,32 +8,39 @@ Modified Structure and Queries on Sun Apr  3 2022
 import pandas as pd
 import numpy as np
 import csv
-from datetime import datetime
+from datetime import datetime, timedelta
 from database_pipeline import DatabaseConnector, Database
 from tech_indicator import TechnicalIndicators
-from settings import db_name, table_name
+from settings import db_name, table_name, tushare_token
 # 确认数据库名称和表格名称，并生成连接数据库所用的connector
 connector_engine = DatabaseConnector(db_name).engine
 database = Database(connector_engine, table_name)
 
-tech_ind = TechnicalIndicators(database)
+tech_ind = TechnicalIndicators(database, tushare_token)
 # database.create_index(table_name, 'code')
 # 想要计算indicator的股票代码list
+
+#tu_handle = TuData(tushare_token)
+#adjdf = tu_handle.get_adj_factor('601789.SH', '20200227', '20200423')
+#sharedf = tu_handle.get_float_share('601789.SH', '20200227', '20200423')
+#with open('adj.csv', 'w', newline='') as f:
+#    adjdf.to_csv(f)
+#with open('share.csv', 'w', newline='') as f:
+#    sharedf.to_csv(f)
+
 check_time = datetime.fromisoformat('2020-04-23 09:31:00')
 code = '601789.XSHG'
 lb = tech_ind.LB(code, check_time)
 ma1w = tech_ind.MA(code, check_time, period=5)
 ma1m = tech_ind.MA(code, check_time, period=5, unit='m')
 k, d, j = tech_ind.KDJ(code, check_time)
-mb, ub, _ = tech_ind.BOLL(code, check_time)
+ub, mb, _ = tech_ind.BOLL(code, check_time)
 dif1d, dea1d, macd1d = tech_ind.MACD(code, check_time)
 dif1m, dea1m, macd1m = tech_ind.MACD(code, check_time, unit='1m')
 dif5m, dea5m, macd5m = tech_ind.MACD(code, check_time, unit='5m')
 
-#hsl1d = tech_ind.HSL(code, check_time)
-# mahsl1d = tech_ind.HSL(code, )
-# hsl1m = tech_ind.HSL(code, check_time)
-# mahsl1m = tech_ind.HSL(code, )
+hsl1d, mahsl1d = tech_ind.HSL(code, check_time)
+hsl1m, mahsl1m = tech_ind.HSL(code, check_time, unit='1m')
 
 mfi1d = tech_ind.MFI(code, check_time)
 rsi1d = tech_ind.RSI(code, check_time)
@@ -44,6 +51,36 @@ pcnt1d, mapcnt1d = tech_ind.PCNT(code, check_time)
 cci1d = tech_ind.CCI(code, check_time)
 cci1m = tech_ind.CCI(code, check_time, unit='1m')
 cci5m = tech_ind.CCI(code, check_time, unit='5m')
+lb_chg = tech_ind.LB(code, check_time) - tech_ind.LB(code, check_time - timedelta(minutes=1))
+last_ma1w = tech_ind.MA(code, check_time - timedelta(days=1))
+ma1w_chg = (tech_ind.MA(code, check_time) - last_ma1w) / last_ma1w
+last_ma1m = tech_ind.MA(code, check_time - timedelta(minutes=1), unit='m')
+ma1m_chg = (tech_ind.MA(code, check_time, unit='m') - last_ma1m) / last_ma1m
+k_chg, d_chg, j_chg = (a-b for a, b in zip(tech_ind.KDJ(code, check_time), tech_ind.KDJ(code, check_time - timedelta(days=1))))
+dif1d_chg, dea1d_chg, macd1d_chg = \
+    (a-b for a, b in zip(tech_ind.MACD(code, check_time), tech_ind.MACD(code, check_time - timedelta(days=1))))
+dif1m_chg, dea1m_chg, macd1m_chg = \
+    (a-b for a, b in zip(tech_ind.MACD(code, check_time, unit='1m'), tech_ind.MACD(code, check_time - timedelta(minutes=1), unit='1m')))
+dif5m_chg, dea5m_chg, macd5m_chg = \
+    (a-b for a, b in zip(tech_ind.MACD(code, check_time, unit='5m'), tech_ind.MACD(code, check_time - timedelta(minutes=1), unit='5m')))
+
+last_boll= tech_ind.BOLL(code, check_time)
+ub_chg, mb_chg, _ = (a-b for a, b in zip(tech_ind.BOLL(code, check_time), last_boll))
+
+hsl1d_chg, mahsl1d_chg = tech_ind.HSL(code, check_time)
+hsl1m_chg, mahsl1m_chg = tech_ind.HSL(code, check_time, unit='1m')
+mfi1d_chg = tech_ind.MFI(code, check_time) - tech_ind.MFI(code, check_time - timedelta(days=1))
+rsi1d_chg = tech_ind.RSI(code, check_time) - tech_ind.RSI(code, check_time - timedelta(days=1))
+accer15m_chg = tech_ind.ACCER(code, check_time, unit='15m') - tech_ind.ACCER(code, check_time - timedelta(minutes=1), unit='1m')
+accer5m_chg = tech_ind.ACCER(code, check_time, unit='5m') - tech_ind.ACCER(code, check_time - timedelta(minutes=1), unit='1m')
+ar_chg, br_chg = \
+    (a-b for a, b in zip(tech_ind.BRAR(code, check_time), tech_ind.BRAR(code, check_time - timedelta(days=1))))
+pcnt1d_chg, mapcnt1d_chg = \
+    (a-b for a, b in zip(tech_ind.PCNT(code, check_time), tech_ind.PCNT(code, check_time - timedelta(days=1))))
+cci1d_chg = tech_ind.CCI(code, check_time) - tech_ind.CCI(code, check_time - timedelta(days=1))
+cci1m_chg = tech_ind.CCI(code, check_time, unit='1m') - tech_ind.CCI(code, check_time - timedelta(minutes=1), unit='1m')
+cci5m_chg = tech_ind.CCI(code, check_time, unit='5m') - tech_ind.CCI(code, check_time - timedelta(minutes=1), unit='5m')
+
 print("LB:", lb)
 #print("MA1w/MA1m:", ma1w, ma1m)
 print("K/D/J:", k, d, j)
@@ -61,10 +98,18 @@ with open("out.csv", 'w', newline='') as f:
     csv_wt = csv.writer(f)
     header = ['lb','k','d','j','dif1d','dea1d','macd1d','dif1m','dea1m','macd1m',
         'dif5m','dea5m','macd5m','ub','mb','mfi1d','rsi1d',
-        'accer5m','accer15m','ar','br','pcnt1d','mapcnt1d','cci1d','cci1m','cci5m']
+        'accer5m','accer15m','ar','br','pcnt1d','mapcnt1d','cci1d','cci1m','cci5m',
+              'lb_chg', 'k_chg', 'd_chg', 'j_chg', 'dif1d_chg', 'dea1d_chg', 'macd1d_chg', 'dif1m_chg', 'dea1m_chg', 'macd1m_chg',
+              'dif5m_chg', 'dea5m_chg', 'macd5m_chg', 'ub_chg', 'mb_chg', 'mfi1d_chg', 'rsi1d_chg',
+              'accer5m_chg', 'accer15m_chg', 'ar_chg', 'br_chg', 'pcnt1d_chg', 'mapcnt1d_chg', 'cci1d_chg', 'cci1m_chg', 'cci5m_chg',
+              ]
     make_list = [lb, k, d, j, dif1d, dea1d, macd1d, dif1m, dea1m, macd1m,
                  dif5m, dea5m, macd5m, ub, mb, mfi1d, rsi1d,
-                 accer5m, accer15m, ar, br, pcnt1d, mapcnt1d, cci1d, cci1m, cci5m]
+                 accer5m, accer15m, ar, br, pcnt1d, mapcnt1d, cci1d, cci1m, cci5m,
+                 lb_chg, k_chg, d_chg, j_chg, dif1d_chg, dea1d_chg, macd1d_chg, dif1m_chg, dea1m_chg, macd1m_chg,
+                 dif5m_chg, dea5m_chg, macd5m_chg, ub_chg, mb_chg, mfi1d_chg, rsi1d_chg,
+                 accer5m_chg, accer15m_chg, ar_chg, br_chg, pcnt1d_chg, mapcnt1d_chg, cci1d_chg, cci1m_chg, cci5m_chg,
+                 ]
     csv_wt.writerow(header)
     csv_wt.writerow(make_list)
 
