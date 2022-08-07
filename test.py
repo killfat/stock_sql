@@ -12,6 +12,7 @@ from datetime import datetime, timedelta
 from database_pipeline import DatabaseConnector, Database
 from tech_indicator import TechnicalIndicators
 from settings import db_name, table_name, tushare_token
+#from collect_indicator import collect_indicator
 # 确认数据库名称和表格名称，并生成连接数据库所用的connector
 connector_engine = DatabaseConnector(db_name).engine
 database = Database(connector_engine, table_name)

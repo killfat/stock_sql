@@ -1,7 +1,7 @@
 from datetime import time, timedelta, datetime
 from copy import copy
 from datetime_manager import DatetimeManager
-from pandas import read_csv, DataFrame, Timestamp, concat, to_datetime, Grouper
+from pandas import read_csv, DataFrame, Timedelta, concat, to_datetime, date_range, Series
 from sklearn.linear_model import LinearRegression
 from numpy import reshape
 from tu_data import TuData
@@ -73,7 +73,12 @@ class TechnicalIndicators:
             start_time = start_time.date()
         if isinstance(end_time, datetime):
             end_time = end_time.date()
-        adjust_rate = self.tu_handle.get_adj_factor(code, start_time, end_time)
+        date_list = [end_time]
+        dt = self.date.backward(end_time, 1)
+        while dt >= start_time:
+            date_list.append(dt)
+            dt = self.date.backward(dt, 1)
+        adjust_rate = self.tu_handle.get_adj_factor(code, date_list)
         #adjust_rate = adjust_rate.set_index('trade_date')
         ratio = adjust_rate['adj_factor'] / max(adjust_rate['adj_factor'])
         return ratio
@@ -81,16 +86,21 @@ class TechnicalIndicators:
     def select_share(self, start_time, end_time, code):
         parse_date = ['trade_date']
         if code[0] == '6':
-            suffix = 'SH'
+            suffix = '.SH'
         else:
-            suffix = 'SZ'
+            suffix = '.SZ'
         code = code.split('.')[0] + suffix
         # float_share = read_csv('share.csv', index_col='trade_date', parse_dates=parse_date)
-        if isinstance(start_time, datetime):
-            start_time = start_time.date()
         if isinstance(end_time, datetime):
             end_time = end_time.date()
-        float_share = self.tu_handle.get_float_share(code, start_time, end_time)
+        if isinstance(start_time, datetime):
+            start_time = start_time.date()
+        date_list = [end_time]
+        dt = self.date.backward(end_time, 1)
+        while dt >= start_time:
+            date_list.append(dt)
+            dt = self.date.backward(dt, 1)
+        float_share = self.tu_handle.get_float_share(code, date_list)
         return float_share['float_share']
 
     def select_n_terms_data(self, start_time, end_time, code=None, ratio=None, price_type='*'):
@@ -117,6 +127,9 @@ class TechnicalIndicators:
         # this could make the class only call database once each day and save some time from connecting database
         # all the indicator calculation should based on this variable
         df = self.database.select_data(start_time, end_time, code, price_type)
+        if df.empty:
+            print('No data found.')
+            return df
         if ratio is None:
             ratio = self.select_ratio(start_time, end_time, code)
         else:
@@ -153,6 +166,10 @@ class TechnicalIndicators:
         # this could make the class only call database once each day and save some time from connecting database
         # all the indicator calculation should based on this variable
         df = self.database.select_time(start_time, end_time, time0, code, price_type)
+        if df.empty:
+            print("No data found.")
+            return df
+
         if ratio is None:
             ratio = self.select_ratio(start_time, end_time, code)
         else:
@@ -321,8 +338,9 @@ class TechnicalIndicators:
             start_day = self.date.backward(check_date.date(), period * days - 1)
         elif unit == 'm':
             start_day = check_date - timedelta(minutes=period - 1)
-            if (start_day.hour == 12 or (start_day.hour == 11 and start_day.minute > 30)) \
-                    or (start_day.hour == 13 and start_day.minute == 0):
+            if ((start_day.day < check_date.day) or
+                    check_date.hour >= 13 and (
+                            start_day.hour < 13 or (start_day.hour == 13 and start_day.minute == 0))):
                 start_day = start_day - timedelta(hours=1, minutes=30)
             if start_day.hour < 9 or (start_day.hour == 9 and start_day.minute <= 30):
                 start_date = self.date.backward(check_date.date(), 1)
@@ -332,6 +350,8 @@ class TechnicalIndicators:
             return None
         if start_day is not None:
             res = self.get_close(ticker, start_day, check_date, unit=unit, include_today=True)
+            if res.empty:
+                return None
             res = res.mean()
             return res
 
@@ -352,16 +372,27 @@ class TechnicalIndicators:
         if self.buffer.get('kdj') is None:
             start_day = self.date.backward(check_date.date(), max_day - 1)
             data = self.get_field_data(ticker, start_day, check_date, ["low", "high"])
+            if data is None:
+                return None, None, None
             daily_low = data['low']
             daily_low = daily_low.groupby(to_datetime(daily_low.index.date)).min()
             daily_high = data['high']
             daily_high = daily_high.groupby(to_datetime(daily_high.index.date)).max()
-            low = daily_low.rolling(window=9).min()
-            high = daily_high.rolling(window=9).max()
+            window = days
+            if days > len(daily_low):
+                window = len(daily_low)
+            low = daily_low.rolling(window=window).min()
+            high = daily_high.rolling(window=window).max()
             date_close = self.get_close(ticker, start_day, check_date, include_today=True)
             RSV = (date_close - low) \
                   / (high - low) * 100
+            if days > len(daily_low):
+                pad_days = 2 * days - len(daily_low)
+                dt_range = date_range(start=RSV.index.min() - Timedelta(days=pad_days + 1), end=RSV.index.min() - Timedelta(days=1))
+                se_na = Series(index=dt_range)
+                RSV = concat([RSV, se_na])
             RSV.fillna(50, inplace=True)
+            RSV = RSV.sort_index()
             K = RSV.ewm(alpha=1 / m1, adjust=False, min_periods=days).mean()
             D = K.ewm(alpha=1 / m2, adjust=False, min_periods=days).mean()
             J = 3 * K - 2 * D
@@ -387,10 +418,12 @@ class TechnicalIndicators:
             if unit == 'd':
                 start_day = self.date.backward(check_date.date(), long + mid - 1)
                 close_df = self.get_close(ticker, start_day, check_date, include_today=include_now)
+                if long + mid - 1 > len(close_df):
+                    return None, None, None
             elif unit[-1] == 'm':
                 start_day = check_date - timedelta(minutes=int(unit[:-1]) * (long + mid - 1) - 1)
-                if (start_day.hour == 12 or (start_day.hour == 11 and start_day.minute > 30)) \
-                        or (start_day.hour == 13 and start_day.minute == 0):
+                if ((start_day.day < check_date.day) or
+                        check_date.hour >= 13 and (start_day.hour < 13 or (start_day.hour == 13 and start_day.minute == 0))):
                     start_day = start_day - timedelta(hours=1, minutes=30)
                 if start_day.hour < 9 or (start_day.hour == 9 and start_day.minute <= 30):
                     start_date = self.date.backward(check_date.date(), 1)
@@ -400,9 +433,12 @@ class TechnicalIndicators:
                         or (start_day.hour == 13 and start_day.minute == 0):
                     start_day = start_day - timedelta(hours=1, minutes=30)
                 close_df = self.get_field_data(ticker, start_day, check_date, ['close'])
+                if long + mid - 1 > len(close_df):
+                    return None, None, None
                 close_df = close_df[(int(unit[:-1]) - 1)::int(unit[:-1])].reset_index()['close']
             else:
-                return None
+                return None, None, None
+
             EMA1 = close_df.ewm(span=short, adjust=False, min_periods=short).mean()
             EMA2 = close_df.ewm(span=long, adjust=False, min_periods=long).mean()
 
@@ -426,6 +462,8 @@ class TechnicalIndicators:
     def BOLL(self, ticker, check_date, days=20, up=2, dwn=2, include_now=True):
         start_day = self.date.backward(check_date.date(), days - 1)
         close = self.get_close(ticker, start_day, check_date)
+        if len(close) < days:
+            return None, None, None
         MB = close.mean()
         UB = MB + up * close.std()
         LB = MB - dwn * close.std()
@@ -437,17 +475,20 @@ class TechnicalIndicators:
             start_day = self.date.backward(check_date.date(), days - 1)
         elif unit[-1] == 'm':
             start_day = check_date - timedelta(minutes=days * int(unit[:-1]) - 1)
-            if (start_day.hour == 12 or (start_day.hour == 11 and start_day.minute > 30)) \
-                    or (start_day.hour == 13 and start_day.minute == 0):
+            if ((start_day.day < check_date.day) or
+                    check_date.hour >= 13 and (
+                            start_day.hour < 13 or (start_day.hour == 13 and start_day.minute == 0))):
                 start_day = start_day - timedelta(hours=1, minutes=30)
             if start_day.hour < 9 or (start_day.hour == 9 and start_day.minute <= 30):
                 start_date = self.date.backward(check_date.date(), 1)
                 start_day = start_day - timedelta(hours=18, minutes=30)
                 start_day = start_day.replace(start_date.year, start_date.month, start_date.day)
         else:
-            return None
+            return None, None
 
         vol_total = self.get_field_data(ticker, start_day, check_date, ['volume'])
+        if len(vol_total) < days:
+            return None, None
         shares = self.select_share(start_day, check_date, ticker)
         vol_total['trade_date'] = to_datetime(vol_total.index.date)
         vol_total = vol_total.reset_index().merge(shares, on='trade_date', how='left').set_index('time')
@@ -466,6 +507,8 @@ class TechnicalIndicators:
     def MFI(self, ticker, check_date, days=14):
         start_day = self.date.backward(check_date.date(), days - 1)
         close = self.get_close(ticker, start_day, check_date, include_today=True)
+        if len(close) < days:
+            return None
         data = self.get_field_data(ticker, start_day, check_date, ['low', 'high', 'volume'])
         low = data['low'].groupby(data.index.date).min()
         high = data['high'].groupby(data.index.date).max()
@@ -479,6 +522,8 @@ class TechnicalIndicators:
     def RSI(self, ticker, check_date, days=14, unit='d'):
         start_day = self.date.backward(check_date.date(), days)
         close = self.get_close(ticker, start_day, check_date, unit=unit, include_today=True)
+        if len(close) < days:
+            return None
         close_delta = close.diff()
         close_delta = close_delta.dropna()
         return 100 - 100 / (1 + close_delta[close_delta > 0].sum() / -close_delta[close_delta < 0].sum())
@@ -488,8 +533,9 @@ class TechnicalIndicators:
             start_day = self.date.backward(check_date.date(), n - 1)
         elif unit[-1] == 'm':
             start_day = check_date - timedelta(minutes=n * int(unit[:-1]) - 1)
-            if (start_day.hour == 12 or (start_day.hour == 11 and start_day.minute > 30)) \
-                    or (start_day.hour == 13 and start_day.minute == 0):
+            if ((start_day.day < check_date.day) or
+                    check_date.hour >= 13 and (
+                            start_day.hour < 13 or (start_day.hour == 13 and start_day.minute == 0))):
                 start_day = start_day - timedelta(hours=1, minutes=30)
             if start_day.hour < 9 or (start_day.hour == 9 and start_day.minute <= 30):
                 start_date = self.date.backward(check_date.date(), 1)
@@ -498,6 +544,8 @@ class TechnicalIndicators:
         else:
             return None
         close = self.get_close(ticker, start_day, check_date, unit=unit[-1], include_today=True)
+        if len(close) < n:
+            return None
         if unit[-1] == 'm':
             close = close[(int(unit[:-1]) - 1)::int(unit[:-1])].reset_index()['close']
         model = LinearRegression()
@@ -510,9 +558,13 @@ class TechnicalIndicators:
     def BRAR(self, ticker, check_date, days=26):
         start_day = self.date.backward(check_date.date(), days - 1)
         data = self.get_field_data(ticker, start_day, check_date, ['low', 'high'])
+        if data.empty:
+            return None, None
         high = data['high'].groupby(data.index.date).max()
         low = data['low'].groupby(data.index.date).min()
         close = self.get_close(ticker, start_day, check_date, include_today=True)
+        if len(close) < days:
+            return None, None
         opn = self.get_open(ticker, start_day, check_date)
         last_close = close.shift()
         x = high - last_close[1:]
@@ -524,8 +576,13 @@ class TechnicalIndicators:
     def PCNT(self, ticker, check_date, days=5):
         start_day = self.date.backward(check_date.date(), days)
         close = self.get_close(ticker, start_day, check_date, include_today=True)
+        if len(close) < days:
+            return None, None
         pcnt_df = (close.diff()[1:]) * 100 / close[1:]
-        mapcnt = pcnt_df.ewm(span=days, adjust=False, min_periods=days).mean()
+        window = days
+        if len(pcnt_df) < days:
+            window = len(pcnt_df)
+        mapcnt = pcnt_df.ewm(span=days, adjust=False, min_periods=window).mean()
         return pcnt_df.tail(1)[0], mapcnt.tail(1)[0]
 
     def CCI(self, ticker, check_date, n=14, unit='d'):
@@ -534,8 +591,9 @@ class TechnicalIndicators:
             start_day = self.date.backward(check_date.date(), n * days - 1)
         elif unit[-1] == 'm':
             start_day = check_date - timedelta(minutes=int(unit[:-1]) * n - 1)
-            if (start_day.hour == 12 or (start_day.hour == 11 and start_day.minute > 30)) \
-                    or (start_day.hour == 13 and start_day.minute == 0):
+            if ((start_day.day < check_date.day) or
+                    check_date.hour >= 13 and (
+                            start_day.hour < 13 or (start_day.hour == 13 and start_day.minute == 0))):
                 start_day = start_day - timedelta(hours=1, minutes=30)
             if start_day.hour < 9 or (start_day.hour == 9 and start_day.minute <= 30):
                 start_date = self.date.backward(check_date.date(), 1)
@@ -544,6 +602,8 @@ class TechnicalIndicators:
         else:
             return None
         close = self.get_close(ticker, start_day, check_date, unit=unit[-1])
+        if len(close) < n:
+            return None
         data = self.get_field_data(ticker, start_day, check_date, ['low', 'high'])
         if unit == 'd':
             high = data['high'].groupby(data.index.date).max()
