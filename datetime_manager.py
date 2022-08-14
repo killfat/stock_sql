@@ -1,5 +1,5 @@
 import pickle
-
+from datetime import timedelta
 
 class DatetimeManager:
     def __init__(self, database):
@@ -21,6 +21,20 @@ class DatetimeManager:
 
     def get_last_day(self):
         return self.date_list[-1]
+
+    def get_previous_trade_time(self, cur_time, t_delta):
+        previous_time = cur_time - t_delta
+        if (((previous_time.day < cur_time.day) or
+                cur_time.hour >= 13) and (previous_time.hour < 13 or (previous_time.hour == 13 and previous_time.minute == 0))):
+            previous_time = previous_time - timedelta(hours=1, minutes=30)
+        if previous_time.hour < 9 or (previous_time.hour == 9 and previous_time.minute <= 30):
+            start_date = self.backward(cur_time.date(), 1)
+            previous_time = previous_time - timedelta(hours=18, minutes=30)
+            previous_time = previous_time.replace(start_date.year, start_date.month, start_date.day)
+        if (previous_time.hour == 12 or (previous_time.hour == 11 and previous_time.minute > 30)) \
+                or (previous_time.hour == 13 and previous_time.minute == 0):
+            previous_time = previous_time - timedelta(hours=1, minutes=30)
+        return previous_time
 
     def add_new_day(self, day):
         self.date_list.append(day)

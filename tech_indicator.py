@@ -80,6 +80,8 @@ class TechnicalIndicators:
             dt = self.date.backward(dt, 1)
         adjust_rate = self.tu_handle.get_adj_factor(code, date_list)
         #adjust_rate = adjust_rate.set_index('trade_date')
+        if adjust_rate is None:
+            return None
         ratio = adjust_rate['adj_factor'] / max(adjust_rate['adj_factor'])
         return ratio
 
@@ -101,6 +103,8 @@ class TechnicalIndicators:
             date_list.append(dt)
             dt = self.date.backward(dt, 1)
         float_share = self.tu_handle.get_float_share(code, date_list)
+        if float_share is None:
+            return None
         return float_share['float_share']
 
     def select_n_terms_data(self, start_time, end_time, code=None, ratio=None, price_type='*'):
@@ -128,19 +132,22 @@ class TechnicalIndicators:
         # all the indicator calculation should based on this variable
         df = self.database.select_data(start_time, end_time, code, price_type)
         if df.empty:
-            print('No data found.')
+            print("No data found. Params:", str(start_time), str(end_time), code)
             return df
         if ratio is None:
             ratio = self.select_ratio(start_time, end_time, code)
+            if ratio is None:
+                return df
+            df['trade_date'] = to_datetime(df.index.date)
+            df = df.reset_index().merge(ratio, on='trade_date', how='left').set_index('time')
+            for col in ['open', 'close', 'high', 'low']:
+                if col in df.columns:
+                    df[col] *= df['adj_factor']
+            df = df.drop(columns=['trade_date', 'adj_factor'])
         else:
             # just ignore ratio
-            ratio = 1
-        df['trade_date'] = to_datetime(df.index.date)
-        df = df.reset_index().merge(ratio, on='trade_date', how='left').set_index('time')
-        for col in ['open', 'close', 'high', 'low']:
-            if col in df.columns:
-                df[col] *= df['adj_factor']
-        df = df.drop(columns=['trade_date', 'adj_factor'])
+            pass
+
         return df
 
     def select_n_time_data(self, start_time, end_time, time0, code=None, ratio=None, price_type='*'):
@@ -167,14 +174,16 @@ class TechnicalIndicators:
         # all the indicator calculation should based on this variable
         df = self.database.select_time(start_time, end_time, time0, code, price_type)
         if df.empty:
-            print("No data found.")
+            print("No data found. Params:", str(start_time), str(end_time), code)
             return df
 
         if ratio is None:
             ratio = self.select_ratio(start_time, end_time, code)
+            if ratio is None:
+                return df
         else:
             # just ignore ratio
-            ratio = 1
+            return df
         df['trade_date'] = to_datetime(df.index.date)
         df = df.reset_index().merge(ratio, on='trade_date', how='left').set_index('time')
         for col in ['open', 'close', 'high', 'low']:
@@ -288,7 +297,8 @@ class TechnicalIndicators:
             elif unit == 'm':
                 data = self.select_n_terms_data(start_time, end_time, ticker, price_type='close')
             else:
-                raise Exception
+                print("Invalid unit parameter.")
+                return None
         return data['close']
 
     def get_open(self, ticker, start_time, end_time, include_today=True):
@@ -315,12 +325,15 @@ class TechnicalIndicators:
             return 0
         today_time = copy(cur_time).replace(hour=9, minute=30)
         start_time = self.date.backward(today_time.date(), days)
-        if start_time is not None:
-            today_avg = self.get_field_data(ticker, today_time, cur_time, 'volume').mean()
-            past_avg = self.get_field_data(ticker, start_time, today_time.date(), 'volume').mean()
-            return (today_avg / past_avg)['volume']
+        data = self.get_field_data(ticker, today_time, cur_time, 'volume')
+        past_data = self.get_field_data(ticker, start_time, today_time.date(), 'volume')
+        if data.empty or past_data.empty:
+            print("LB: no data.")
+            return None
         else:
-            raise Exception
+            today_avg = data.mean()
+            past_avg = past_data.mean()
+            return (today_avg / past_avg)['volume']
 
     def MA(self, ticker, check_date, period=5, unit='d'):
         """
@@ -337,26 +350,17 @@ class TechnicalIndicators:
             days = 1
             start_day = self.date.backward(check_date.date(), period * days - 1)
         elif unit == 'm':
-            start_day = check_date - timedelta(minutes=period - 1)
-            if ((start_day.day < check_date.day) or
-                    check_date.hour >= 13 and (
-                            start_day.hour < 13 or (start_day.hour == 13 and start_day.minute == 0))):
-                start_day = start_day - timedelta(hours=1, minutes=30)
-            if start_day.hour < 9 or (start_day.hour == 9 and start_day.minute <= 30):
-                start_date = self.date.backward(check_date.date(), 1)
-                start_day = start_day - timedelta(hours=18, minutes=30)
-                start_day = start_day.replace(start_date.year, start_date.month, start_date.day)
+            start_day = self.date.get_previous_trade_time(check_date, timedelta(minutes=period - 1))
         else:
+            print("LB: Invalid unit.")
             return None
-        if start_day is not None:
-            res = self.get_close(ticker, start_day, check_date, unit=unit, include_today=True)
-            if res.empty:
-                return None
-            res = res.mean()
-            return res
+        res = self.get_close(ticker, start_day, check_date, unit=unit, include_today=True)
+        if res.empty:
+            print("Not enough close data for LB")
+            return None
+        res = res.mean()
+        return res
 
-        else:
-            raise Exception
 
     def KDJ(self, ticker, check_date, days=9, m1=3, m2=3, max_day=30):
         """
@@ -372,7 +376,8 @@ class TechnicalIndicators:
         if self.buffer.get('kdj') is None:
             start_day = self.date.backward(check_date.date(), max_day - 1)
             data = self.get_field_data(ticker, start_day, check_date, ["low", "high"])
-            if data is None:
+            if data.empty:
+                print("Not enough data for KDJ.")
                 return None, None, None
             daily_low = data['low']
             daily_low = daily_low.groupby(to_datetime(daily_low.index.date)).min()
@@ -419,24 +424,18 @@ class TechnicalIndicators:
                 start_day = self.date.backward(check_date.date(), long + mid - 1)
                 close_df = self.get_close(ticker, start_day, check_date, include_today=include_now)
                 if long + mid - 1 > len(close_df):
+                    print("Not enough close data for MACD-d")
                     return None, None, None
             elif unit[-1] == 'm':
-                start_day = check_date - timedelta(minutes=int(unit[:-1]) * (long + mid - 1) - 1)
-                if ((start_day.day < check_date.day) or
-                        check_date.hour >= 13 and (start_day.hour < 13 or (start_day.hour == 13 and start_day.minute == 0))):
-                    start_day = start_day - timedelta(hours=1, minutes=30)
-                if start_day.hour < 9 or (start_day.hour == 9 and start_day.minute <= 30):
-                    start_date = self.date.backward(check_date.date(), 1)
-                    start_day = start_day - timedelta(hours=18, minutes=30)
-                    start_day = start_day.replace(start_date.year, start_date.month, start_date.day)
-                if (start_day.hour == 12 or (start_day.hour == 11 and start_day.minute > 30)) \
-                        or (start_day.hour == 13 and start_day.minute == 0):
-                    start_day = start_day - timedelta(hours=1, minutes=30)
+                start_day = self.date.get_previous_trade_time(check_date,
+                                                              timedelta(minutes=int(unit[:-1]) * (long + mid - 1) - 1))
                 close_df = self.get_field_data(ticker, start_day, check_date, ['close'])
                 if long + mid - 1 > len(close_df):
+                    print("Not enough close data for MACD-m")
                     return None, None, None
                 close_df = close_df[(int(unit[:-1]) - 1)::int(unit[:-1])].reset_index()['close']
             else:
+                print("Invalid unit param.")
                 return None, None, None
 
             EMA1 = close_df.ewm(span=short, adjust=False, min_periods=short).mean()
@@ -463,6 +462,7 @@ class TechnicalIndicators:
         start_day = self.date.backward(check_date.date(), days - 1)
         close = self.get_close(ticker, start_day, check_date)
         if len(close) < days:
+            print("Not enough close data for BOLL")
             return None, None, None
         MB = close.mean()
         UB = MB + up * close.std()
@@ -474,22 +474,19 @@ class TechnicalIndicators:
         if unit == 'd':
             start_day = self.date.backward(check_date.date(), days - 1)
         elif unit[-1] == 'm':
-            start_day = check_date - timedelta(minutes=days * int(unit[:-1]) - 1)
-            if ((start_day.day < check_date.day) or
-                    check_date.hour >= 13 and (
-                            start_day.hour < 13 or (start_day.hour == 13 and start_day.minute == 0))):
-                start_day = start_day - timedelta(hours=1, minutes=30)
-            if start_day.hour < 9 or (start_day.hour == 9 and start_day.minute <= 30):
-                start_date = self.date.backward(check_date.date(), 1)
-                start_day = start_day - timedelta(hours=18, minutes=30)
-                start_day = start_day.replace(start_date.year, start_date.month, start_date.day)
+            start_day = self.date.get_previous_trade_time(check_date, timedelta(minutes=days * int(unit[:-1]) - 1))
         else:
+            print("Invalid unit param")
             return None, None
 
         vol_total = self.get_field_data(ticker, start_day, check_date, ['volume'])
         if len(vol_total) < days:
+            print("Not enough volume data for HSL")
             return None, None
         shares = self.select_share(start_day, check_date, ticker)
+        if shares is None:
+            print("No share data available.")
+            return None, None
         vol_total['trade_date'] = to_datetime(vol_total.index.date)
         vol_total = vol_total.reset_index().merge(shares, on='trade_date', how='left').set_index('time')
         vol_total = vol_total.drop(columns=['trade_date', 'float_share'])
@@ -508,6 +505,7 @@ class TechnicalIndicators:
         start_day = self.date.backward(check_date.date(), days - 1)
         close = self.get_close(ticker, start_day, check_date, include_today=True)
         if len(close) < days:
+            print("Not enough close data for MFI")
             return None
         data = self.get_field_data(ticker, start_day, check_date, ['low', 'high', 'volume'])
         low = data['low'].groupby(data.index.date).min()
@@ -523,6 +521,7 @@ class TechnicalIndicators:
         start_day = self.date.backward(check_date.date(), days)
         close = self.get_close(ticker, start_day, check_date, unit=unit, include_today=True)
         if len(close) < days:
+            print("Not enough close data for RSI")
             return None
         close_delta = close.diff()
         close_delta = close_delta.dropna()
@@ -532,19 +531,13 @@ class TechnicalIndicators:
         if unit == 'd':
             start_day = self.date.backward(check_date.date(), n - 1)
         elif unit[-1] == 'm':
-            start_day = check_date - timedelta(minutes=n * int(unit[:-1]) - 1)
-            if ((start_day.day < check_date.day) or
-                    check_date.hour >= 13 and (
-                            start_day.hour < 13 or (start_day.hour == 13 and start_day.minute == 0))):
-                start_day = start_day - timedelta(hours=1, minutes=30)
-            if start_day.hour < 9 or (start_day.hour == 9 and start_day.minute <= 30):
-                start_date = self.date.backward(check_date.date(), 1)
-                start_day = start_day - timedelta(hours=18, minutes=30)
-                start_day = start_day.replace(start_date.year, start_date.month, start_date.day)
+            start_day = self.date.get_previous_trade_time(check_date, timedelta(minutes=n * int(unit[:-1]) - 1))
         else:
+            print("Invalid unit parameter.")
             return None
         close = self.get_close(ticker, start_day, check_date, unit=unit[-1], include_today=True)
         if len(close) < n:
+            print("Not enough close data for ACCER.")
             return None
         if unit[-1] == 'm':
             close = close[(int(unit[:-1]) - 1)::int(unit[:-1])].reset_index()['close']
@@ -559,11 +552,13 @@ class TechnicalIndicators:
         start_day = self.date.backward(check_date.date(), days - 1)
         data = self.get_field_data(ticker, start_day, check_date, ['low', 'high'])
         if data.empty:
+            print("Not enough close data for BRAR")
             return None, None
         high = data['high'].groupby(data.index.date).max()
         low = data['low'].groupby(data.index.date).min()
         close = self.get_close(ticker, start_day, check_date, include_today=True)
         if len(close) < days:
+            print("Not enough close data for BRAR")
             return None, None
         opn = self.get_open(ticker, start_day, check_date)
         last_close = close.shift()
@@ -577,6 +572,7 @@ class TechnicalIndicators:
         start_day = self.date.backward(check_date.date(), days)
         close = self.get_close(ticker, start_day, check_date, include_today=True)
         if len(close) < days:
+            print("Not enough close data for PCNT")
             return None, None
         pcnt_df = (close.diff()[1:]) * 100 / close[1:]
         window = days
@@ -590,19 +586,13 @@ class TechnicalIndicators:
             days = 1
             start_day = self.date.backward(check_date.date(), n * days - 1)
         elif unit[-1] == 'm':
-            start_day = check_date - timedelta(minutes=int(unit[:-1]) * n - 1)
-            if ((start_day.day < check_date.day) or
-                    check_date.hour >= 13 and (
-                            start_day.hour < 13 or (start_day.hour == 13 and start_day.minute == 0))):
-                start_day = start_day - timedelta(hours=1, minutes=30)
-            if start_day.hour < 9 or (start_day.hour == 9 and start_day.minute <= 30):
-                start_date = self.date.backward(check_date.date(), 1)
-                start_day = start_day - timedelta(hours=18, minutes=30)
-                start_day = start_day.replace(start_date.year, start_date.month, start_date.day)
+            start_day = self.date.get_previous_trade_time(check_date, timedelta(minutes=int(unit[:-1]) * n - 1))
         else:
+            print("Invalid unit params for CCI.")
             return None
         close = self.get_close(ticker, start_day, check_date, unit=unit[-1])
         if len(close) < n:
+            print("Not enough close data for CCI")
             return None
         data = self.get_field_data(ticker, start_day, check_date, ['low', 'high'])
         if unit == 'd':
@@ -622,3 +612,41 @@ class TechnicalIndicators:
         ave_dev = typ.mad()
         err = 15 * ave_dev
         return (typ.iloc[-1] - typ.mean()) * 1000 / err
+
+
+def get_chg(func, code, check_time, t_delta, unit=None):
+    param = [code, check_time]
+    kwargs = {}
+    if unit is not None:
+        kwargs['unit'] = unit
+    cur = func(*param, **kwargs)
+    if cur is None:
+        return None
+    param[1] -= t_delta
+    prev = func(*param, **kwargs)
+    if prev is None:
+        return None
+    if isinstance(cur, tuple):
+        return ((a - b) for a, b in zip(cur, prev))
+    else:
+        return cur - prev
+
+
+def get_chg_rate(func, code, check_time, t_delta, unit=None):
+    param = [code, check_time]
+    kwargs = {}
+    if unit is not None:
+        kwargs['unit'] = unit
+    cur = func(*param, **kwargs)
+    if cur is None:
+        return None
+    param[1] -= t_delta
+    prev = func(*param, **kwargs)
+    if prev is None:
+        return None
+    if isinstance(cur, tuple):
+        return ((a - b) / b for a, b in zip(cur, prev))
+    elif prev == 0:
+        return None
+    else:
+        return (cur - prev) / prev
