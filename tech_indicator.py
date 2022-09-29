@@ -77,7 +77,10 @@ class TechnicalIndicators:
         dt = self.date.backward(end_time, 1)
         while dt >= start_time:
             date_list.append(dt)
-            dt = self.date.backward(dt, 1)
+            last_dt = self.date.backward(dt, 1)
+            if last_dt == dt:
+                break
+            dt = last_dt
         adjust_rate = self.tu_handle.get_adj_factor(code, date_list)
         #adjust_rate = adjust_rate.set_index('trade_date')
         if adjust_rate is None:
@@ -101,7 +104,10 @@ class TechnicalIndicators:
         dt = self.date.backward(end_time, 1)
         while dt >= start_time:
             date_list.append(dt)
-            dt = self.date.backward(dt, 1)
+            last_dt = self.date.backward(dt, 1)
+            if last_dt == dt:
+                break
+            dt = last_dt
         float_share = self.tu_handle.get_float_share(code, date_list)
         if float_share is None:
             return None
@@ -311,6 +317,14 @@ class TechnicalIndicators:
         data.index = data.index.normalize()
         return data['open']
 
+    def check_available(self, ticker, check_date, days=35):
+        start_day = self.date.backward(check_date.date(), days)
+        res = self.get_close(ticker, start_day, check_date, include_today=True)
+        if len(res) < days:
+            return False
+        else:
+            return True
+
     def LB(self, ticker, cur_time, days=5):
         """
         计算量比
@@ -361,7 +375,6 @@ class TechnicalIndicators:
         res = res.mean()
         return res
 
-
     def KDJ(self, ticker, check_date, days=9, m1=3, m2=3, max_day=30):
         """
 
@@ -401,12 +414,9 @@ class TechnicalIndicators:
             K = RSV.ewm(alpha=1 / m1, adjust=False, min_periods=days).mean()
             D = K.ewm(alpha=1 / m2, adjust=False, min_periods=days).mean()
             J = 3 * K - 2 * D
-            df = DataFrame(date_close)
-            df['K'] = K
-            df['D'] = D
-            df['J'] = J
-            df = df.dropna()
-            return df.iloc[-1]['K'], df.iloc[-1]['D'], df.iloc[-1]['J']
+            df = concat([K, D, J], axis=1, join='inner')
+            #df = df.dropna()
+            return (*df.iloc[-1].tolist(), )
         else:
             start = self.date.backward(check_date.date(), days)
             low = self.get_field_data(ticker, start, check_date, ['low', 'high']).min()
@@ -461,7 +471,7 @@ class TechnicalIndicators:
     def BOLL(self, ticker, check_date, days=20, up=2, dwn=2, include_now=True):
         start_day = self.date.backward(check_date.date(), days - 1)
         close = self.get_close(ticker, start_day, check_date)
-        if len(close) < days:
+        if len(close) < 7:
             print("Not enough close data for BOLL")
             return None, None, None
         MB = close.mean()
@@ -627,6 +637,8 @@ def get_chg(func, code, check_time, t_delta, unit=None):
     if prev is None:
         return None
     if isinstance(cur, tuple):
+        if cur[-1] is None:
+            return [None] * len(cur)
         return ((a - b) for a, b in zip(cur, prev))
     else:
         return cur - prev
@@ -645,6 +657,8 @@ def get_chg_rate(func, code, check_time, t_delta, unit=None):
     if prev is None:
         return None
     if isinstance(cur, tuple):
+        if cur[-1] is None:
+            return [None] * len(cur)
         return ((a - b) / b for a, b in zip(cur, prev))
     elif prev == 0:
         return None

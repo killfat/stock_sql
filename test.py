@@ -29,7 +29,7 @@ tech_ind = TechnicalIndicators(database, tushare_token)
 #with open('share.csv', 'w', newline='') as f:
 #    sharedf.to_csv(f)
 
-check_time = datetime.fromisoformat('2020-04-23 09:31:00')
+check_time = datetime.fromisoformat('2020-03-02 13:23:00')
 code = '601789.XSHG'
 lb = tech_ind.LB(code, check_time)
 ma1w = tech_ind.MA(code, check_time, period=5)

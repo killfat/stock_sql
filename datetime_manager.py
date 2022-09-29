@@ -56,8 +56,8 @@ class DatetimeManager:
         # only return start day
         idx = self.find(today)
         if idx < days:
-            print("back %s days not available" % days)
-            return None
+            #print("Warning: Back %s days not available" % days)
+            return self.date_list[0]
 
         return self.date_list[idx - days]
 
@@ -65,8 +65,8 @@ class DatetimeManager:
         # return len-days list, containing available dates
         idx = self.find(today)
         if idx < days:
-            print("back %s days not available" % days)
-            return None
+            #print("Warning: Back %s days not available, return all available days" % days)
+            return self.date_list[:idx]
         return self.date_list[idx - days:idx]
 
     # def forward(self, today, days):
